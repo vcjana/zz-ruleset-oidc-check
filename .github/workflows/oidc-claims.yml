@@ -1,0 +1,29 @@
+name: OIDC claims check
+on:
+  workflow_dispatch:
+  push:
+    tags: ['release-*']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  claims:
+    runs-on: ubuntu-latest
+    steps:
+      - name: A child process mints a token and prints its claims (never the token)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, json, os, urllib.request
+          url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+          tok = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+          print("child process sees ACTIONS_ID_TOKEN_REQUEST_URL:", bool(url))
+          print("child process sees ACTIONS_ID_TOKEN_REQUEST_TOKEN:", bool(tok))
+          req = urllib.request.Request(url + "&audience=sts.amazonaws.com", headers={"Authorization": "bearer " + tok})
+          jwt = json.load(urllib.request.urlopen(req))["value"]
+          body = jwt.split(".")[1]
+          body += "=" * (-len(body) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(body))
+          for k in ("sub", "ref", "ref_type", "event_name", "workflow", "workflow_ref", "job_workflow_ref", "repository", "repository_id", "repository_owner_id", "environment"):
+              print(f"{k} = {claims.get(k)}")
+          PY
